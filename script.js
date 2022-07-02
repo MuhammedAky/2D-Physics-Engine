@@ -4,7 +4,7 @@ const ctx = canvas.getContext('2d');
 const BALLZ = [];
 
 let LEFT, UP, RIGHT, DOWN;
-let friction = 0.1;
+let friction = 0.0;
 
 class Vector{
     constructor(x, y){
@@ -28,12 +28,10 @@ class Vector{
         return new Vector(this.x*n, this.y*n);
     }
 
-    //returns a perpendicular normal vector
     normal(){
         return new Vector(-this.y, this.x).unit();
     }
 
-    //returns a vector with same direction and 1 length
     unit(){
         if(this.mag() === 0){
             return new Vector(0,0);
@@ -48,9 +46,9 @@ class Vector{
         ctx.lineTo(start_x + this.x * n, start_y + this.y * n);
         ctx.strokeStyle = color;
         ctx.stroke();
-        ctx.closePath()
+        ctx.closePath();
     }
-    //returns the length of a vectors projection onto the other one
+    
     static dot(v1, v2){
         return v1.x*v2.x + v1.y*v2.y;
     }
@@ -58,8 +56,7 @@ class Vector{
 
 class Ball{
     constructor(x, y, r){
-        this.x = x;
-        this.y = y;
+        this.pos = new Vector(x,y);
         this.r = r;
         this.vel = new Vector(0,0);
         this.acc = new Vector(0,0);
@@ -70,7 +67,7 @@ class Ball{
 
     drawBall(){
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.r, 0, 2*Math.PI);
+        ctx.arc(this.pos.x, this.pos.y, this.r, 0, 2*Math.PI);
         ctx.strokeStyle = "black";
         ctx.stroke();
         ctx.fillStyle = "red";
@@ -86,6 +83,13 @@ class Ball{
         ctx.strokeStyle = "black";
         ctx.stroke();
         ctx.closePath();
+    }
+
+    reposition(){
+        this.acc = this.acc.unit().mult(this.acceleration);
+        this.vel = this.vel.add(this.acc);
+        this.vel = this.vel.mult(1-friction);
+        this.pos = this.pos.add(this.vel);
     }
 }
 
@@ -104,6 +108,7 @@ function keyControl(b){
             DOWN = true;
         }
     });
+    
     canvas.addEventListener('keyup', function(e){
         if(e.keyCode === 37){
             LEFT = false;
@@ -118,6 +123,7 @@ function keyControl(b){
             DOWN = false;
         }
     });
+    
     if(LEFT){
         b.acc.x = -b.acceleration;
     }
@@ -136,26 +142,77 @@ function keyControl(b){
     if(!UP && !DOWN){
         b.acc.y = 0;
     }
-    b.acc = b.acc.unit().mult(b.acceleration);
-    b.vel = b.vel.add(b.acc);
-    b.vel = b.vel.mult(1-friction);
-    b.x += b.vel.x;
-    b.y += b.vel.y;
+}
+
+function round(number, precision){
+    let factor = 10**precision;
+    return Math.round(number * factor) / factor;
+}
+
+function coll_det_bb(b1, b2){
+    if(b1.r + b2.r >= b2.pos.subtr(b1.pos).mag()){
+        return true;
+    } else {
+        return false;
+    }
+}
+
+function pen_res_bb(b1, b2){
+    let dist = b1.pos.subtr(b2.pos);
+    let pen_depth = b1.r + b2.r - dist.mag();
+    let pen_res = dist.unit().mult(pen_depth/2);
+    b1.pos = b1.pos.add(pen_res);
+    b2.pos = b2.pos.add(pen_res.mult(-1));
+}
+
+//collision resolution
+//calculates the balls new velocity vectors after the collision
+function coll_res_bb(b1, b2){
+	//collision normal vector
+    let normal = b1.pos.subtr(b2.pos).unit();
+    //relative velocity vector
+    let relVel = b1.vel.subtr(b2.vel);
+    //separating velocity - relVel projected onto the collision normal vector
+    let sepVel = Vector.dot(relVel, normal);
+    //the projection value after the collision (multiplied by -1)
+    let new_sepVel = -sepVel;
+    //collision normal vector with the magnitude of the new_sepVel
+    let sepVelVec = normal.mult(new_sepVel);
+
+    //adding the separating velocity vector to the original vel. vector
+    b1.vel = b1.vel.add(sepVelVec);
+    //adding its opposite to the other balls original vel. vector
+    b2.vel = b2.vel.add(sepVelVec.mult(-1));
+}
+
+function momentum_display(){
+    let momentum = Ball1.vel.add(Ball2.vel).mag();
+    ctx.fillText("Momentum: "+round(momentum, 4), 500, 330);
 }
 
 function mainLoop(timestamp) {
     ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
-    BALLZ.forEach((b) => {
+    BALLZ.forEach((b, index) => {
         b.drawBall();
         if (b.player){
             keyControl(b);
         }
+        for(let i = index+1; i<BALLZ.length; i++){
+            if(coll_det_bb(BALLZ[index], BALLZ[i])){
+                pen_res_bb(BALLZ[index], BALLZ[i]);
+                coll_res_bb(BALLZ[index], BALLZ[i]);
+            }
+        }
         b.display();
-    })
+        b.reposition();
+    });
+    momentum_display();
+
     requestAnimationFrame(mainLoop);
 }
 
 let Ball1 = new Ball(200, 200, 30);
+let Ball2 = new Ball(300, 250, 40);
 Ball1.player = true;
 
 requestAnimationFrame(mainLoop);
