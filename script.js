@@ -4,19 +4,65 @@ const ctx = canvas.getContext('2d');
 const BALLZ = [];
 
 let LEFT, UP, RIGHT, DOWN;
-
-//velocity gets multiplied by (1-friction)
 let friction = 0.1;
+
+class Vector{
+    constructor(x, y){
+        this.x = x;
+        this.y = y;
+    }
+
+    add(v){
+        return new Vector(this.x+v.x, this.y+v.y);
+    }
+
+    subtr(v){
+        return new Vector(this.x-v.x, this.y-v.y);
+    }
+
+    mag(){
+        return Math.sqrt(this.x**2 + this.y**2);
+    }
+
+    mult(n){
+        return new Vector(this.x*n, this.y*n);
+    }
+
+    //returns a perpendicular normal vector
+    normal(){
+        return new Vector(-this.y, this.x).unit();
+    }
+
+    //returns a vector with same direction and 1 length
+    unit(){
+        if(this.mag() === 0){
+            return new Vector(0,0);
+        } else {
+            return new Vector(this.x/this.mag(), this.y/this.mag());
+        }
+    }
+
+    drawVec(start_x, start_y, n, color){
+        ctx.beginPath();
+        ctx.moveTo(start_x, start_y);
+        ctx.lineTo(start_x + this.x * n, start_y + this.y * n);
+        ctx.strokeStyle = color;
+        ctx.stroke();
+        ctx.closePath()
+    }
+    //returns the length of a vectors projection onto the other one
+    static dot(v1, v2){
+        return v1.x*v2.x + v1.y*v2.y;
+    }
+}
 
 class Ball{
     constructor(x, y, r){
         this.x = x;
         this.y = y;
         this.r = r;
-        this.vel_x = 0;
-        this.vel_y = 0;
-        this.acc_x = 0;
-        this.acc_y = 0;
+        this.vel = new Vector(0,0);
+        this.acc = new Vector(0,0);
         this.acceleration = 1;
         this.player = false;
         BALLZ.push(this);
@@ -32,18 +78,12 @@ class Ball{
         ctx.closePath();
     }
 
-    //displaying the current acceleration and the velocity of the ball
     display(){
+        this.vel.drawVec(550, 400, 10, "green");
+        this.acc.unit().drawVec(550, 400, 50, "blue");
         ctx.beginPath();
-        ctx.moveTo(this.x, this.y);
-        ctx.lineTo(this.x + this.acc_x*100, this.y + this.acc_y*100);
-        ctx.strokeStyle = "green";
-        ctx.stroke();
-        ctx.closePath();
-        ctx.beginPath();
-        ctx.moveTo(this.x, this.y);
-        ctx.lineTo(this.x + this.vel_x*10, this.y + this.vel_y*10);
-        ctx.strokeStyle = "blue";
+        ctx.arc(550, 400, 50, 0, 2*Math.PI);
+        ctx.strokeStyle = "black";
         ctx.stroke();
         ctx.closePath();
     }
@@ -64,7 +104,6 @@ function keyControl(b){
             DOWN = true;
         }
     });
-    
     canvas.addEventListener('keyup', function(e){
         if(e.keyCode === 37){
             LEFT = false;
@@ -79,40 +118,32 @@ function keyControl(b){
             DOWN = false;
         }
     });
-    
-    //if true, the accelertion component gets a certain value
     if(LEFT){
-        b.acc_x = -b.acceleration;
+        b.acc.x = -b.acceleration;
     }
     if(UP){
-        b.acc_y = -b.acceleration;
+        b.acc.y = -b.acceleration;
     }
     if(RIGHT){
-        b.acc_x = b.acceleration;
+        b.acc.x = b.acceleration;
     }
     if(DOWN){
-        b.acc_y = b.acceleration;
+        b.acc.y = b.acceleration;
+    }
+    if(!LEFT && !RIGHT){
+        b.acc.x = 0;
     }
     if(!UP && !DOWN){
-        b.acc_y = 0;
+        b.acc.y = 0;
     }
-    if(!RIGHT && !LEFT){
-        b.acc_x = 0;
-    }
-
-    //acceleration values added to the velocity components
-    b.vel_x += b.acc_x;
-    b.vel_y += b.acc_y;
-    //velocity gets multiplied by a number between 0 and 1
-    b.vel_x *= 1-friction;
-    b.vel_y *= 1-friction;
-    //velocity values added to the current x, y position
-    b.x += b.vel_x;
-    b.y += b.vel_y;
-
+    b.acc = b.acc.unit().mult(b.acceleration);
+    b.vel = b.vel.add(b.acc);
+    b.vel = b.vel.mult(1-friction);
+    b.x += b.vel.x;
+    b.y += b.vel.y;
 }
 
-function mainLoop() {
+function mainLoop(timestamp) {
     ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
     BALLZ.forEach((b) => {
         b.drawBall();
@@ -120,11 +151,11 @@ function mainLoop() {
             keyControl(b);
         }
         b.display();
-    });
+    })
     requestAnimationFrame(mainLoop);
 }
 
-let Ball1 = new Ball(200, 200, 100);
+let Ball1 = new Ball(200, 200, 30);
 Ball1.player = true;
 
 requestAnimationFrame(mainLoop);
