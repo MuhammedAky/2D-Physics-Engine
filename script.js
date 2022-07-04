@@ -3,6 +3,7 @@ const ctx = canvas.getContext('2d');
 
 const BALLZ = [];
 const WALLZ = [];
+const CAPS = [];
 
 let LEFT, UP, RIGHT, DOWN;
 let friction = 0.05;
@@ -53,10 +54,12 @@ class Vector{
     static dot(v1, v2){
         return v1.x*v2.x + v1.y*v2.y;
     }
+
+    static cross(v1, v2){
+        return v1.x*v2.y - v1.y*v2.x;
+    }
 }
 
-
-//Matrix gets its values set to 0 as default
 class Matrix{
     constructor(rows, cols){
         this.rows = rows;
@@ -143,7 +146,72 @@ class Ball{
     }
 }
 
-//Walls are line segments between two points
+//capsule class
+class Capsule{
+    constructor(x1, y1, x2, y2, r){
+        this.start = new Vector(x1, y1);
+        this.end = new Vector(x2,y2);
+        this.r = r;
+        this.length = this.end.subtr(this.start).mag();
+        this.refDir = this.end.subtr(this.start).unit();
+        this.dir = this.end.subtr(this.start).unit();
+        this.pos = this.start.add(this.end).mult(0.5);
+        this.vel = new Vector(0,0);
+        this.acc = new Vector(0,0);
+        this.acceleration = 1;
+        this.angVel = 0;
+        this.angle = 0;
+        this.refAngle = Math.acos(Vector.dot(this.end.subtr(this.start).unit(), new Vector(1,0)));
+        //if reaching 2.vec from 1.vec is faster CW, then -, if CCW, then +
+        if (Vector.cross(this.end.subtr(this.start).unit(), new Vector(1,0)) > 0){
+            this.refAngle *= -1;
+        }
+        CAPS.push(this);
+    }
+
+    draw(){
+        ctx.beginPath();
+        ctx.arc(this.start.x, this.start.y, this.r, this.refAngle+this.angle+Math.PI/2, this.refAngle+this.angle+3*Math.PI/2);
+        ctx.arc(this.end.x, this.end.y, this.r, this.refAngle+this.angle-Math.PI/2, this.refAngle+this.angle+Math.PI/2);
+        ctx.closePath();
+        ctx.strokeStyle = "black";
+        ctx.stroke();
+        ctx.fillStyle = "lightgreen";
+        ctx.fill(); 
+    }
+
+    keyControl(){
+        if(UP){
+            this.acc = this.dir.mult(-this.acceleration);;
+        }
+        if(DOWN){
+            this.acc = this.dir.mult(this.acceleration);;
+        }
+        if(LEFT){
+            this.angVel = -0.1;
+        }
+        if(RIGHT){
+            this.angVel = 0.1;
+        }
+        if(!UP && !DOWN){
+            this.acc = new Vector(0,0);
+        }
+    }
+
+    reposition(){
+        this.acc = this.acc.unit().mult(this.acceleration);
+        this.vel = this.vel.add(this.acc);
+        this.vel = this.vel.mult(1-friction);
+        this.pos = this.pos.add(this.vel);
+        this.angle += this.angVel;
+        this.angVel *= 0.95;
+        let rotMat = rotMx(this.angle);
+        this.dir = rotMat.multiplyVec(this.refDir);
+        this.start = this.pos.add(this.dir.mult(-this.length/2));
+        this.end = this.pos.add(this.dir.mult(this.length/2));
+    }
+}
+
 class Wall{
     constructor(x1, y1, x2, y2){
         this.start = new Vector(x1, y1);
@@ -190,7 +258,6 @@ class Wall{
     }
 }
 
-//keeps the value true as long as the key is pressed
 function userInput(){
     canvas.addEventListener('keydown', function(e){
         if(e.keyCode === 37){
@@ -232,7 +299,6 @@ function randInt(min, max){
     return Math.floor(Math.random() * (max-min+1)) + min;
 }
 
-//The rotation matrix function
 function rotMx(angle){
     let mx = new Matrix(2,2);
     mx.data[0][0] = Math.cos(angle);
@@ -343,10 +409,16 @@ function mainLoop(timestamp) {
         w.reposition();
     })
 
+    CAPS.forEach((c) => {
+        c.draw();
+        c.keyControl();
+        c.reposition();
+    })
+
     requestAnimationFrame(mainLoop);
 }
 
-let Wall1 = new Wall (200, 200, 400, 200);
+let Caps1 = new Capsule(100, 300, 100, 100, 30);
 
 
 
