@@ -157,8 +157,14 @@ class Capsule{
         } else {
             this.inv_m = 1 / this.m;
         }
-        this.elasticity = 1;
         this.length = this.end.subtr(this.start).mag();
+        this.inertia = this.m * (this.r**2 +(this.length+2*this.r)**2) / 12;
+        if (this.m === 0){
+            this.inv_inertia = 0;
+        } else {
+            this.inv_inertia = 1 / this.inertia;
+        }
+        this.elasticity = 1;
         this.refDir = this.end.subtr(this.start).unit();
         this.dir = this.end.subtr(this.start).unit();
         this.pos = this.start.add(this.end).mult(0.5);
@@ -168,6 +174,7 @@ class Capsule{
         this.angVel = 0;
         this.angle = 0;
         this.refAngle = Math.acos(Vector.dot(this.end.subtr(this.start).unit(), new Vector(1,0)));
+        //if reaching 2.vec from 1.vec is faster CW, then -, if CCW, then +
         if (Vector.cross(this.end.subtr(this.start).unit(), new Vector(1,0)) > 0){
             this.refAngle *= -1;
         }
@@ -180,12 +187,12 @@ class Capsule{
         ctx.arc(this.start.x, this.start.y, this.r, this.refAngle+this.angle+Math.PI/2, this.refAngle+this.angle+3*Math.PI/2);
         ctx.arc(this.end.x, this.end.y, this.r, this.refAngle+this.angle-Math.PI/2, this.refAngle+this.angle+Math.PI/2);
         ctx.closePath();
-        ctx.moveTo(this.start.x, this.start.y);
-        ctx.lineTo(this.end.x, this.end.y);
+        //ctx.moveTo(this.start.x, this.start.y);
+        //ctx.lineTo(this.end.x, this.end.y);
         ctx.strokeStyle = "black";
         ctx.stroke();
-        //ctx.fillStyle = "lightgreen";
-        //ctx.fill(); 
+        ctx.fillStyle = "lightgreen";
+        ctx.fill(); 
     }
 
     keyControl(){
@@ -376,7 +383,6 @@ function coll_det_bw(b1, w1){
     }
 }
 
-//Capsule - Capsule collision detection
 function coll_det_cc(c1, c2){
     if(c1.r + c2.r >= closestPointsBetweenLS(c1, c2)[0].subtr(closestPointsBetweenLS(c1, c2)[1]).mag()){
         return true;
@@ -398,7 +404,6 @@ function pen_res_bw(b1, w1){
     b1.pos = b1.pos.add(penVect.unit().mult(b1.r-penVect.mag()));
 }
 
-//Capsule - Capsule penetration resolution
 function pen_res_cc(c1, c2){
     let dist = closestPointsBetweenLS(c1, c2)[0].subtr(closestPointsBetweenLS(c1, c2)[1]);
     let pen_depth = c1.r + c2.r - dist.mag();
@@ -429,19 +434,38 @@ function coll_res_bw(b1, w1){
     b1.vel = b1.vel.add(normal.mult(-vsep_diff));
 }
 
-//Capsule - Capsule linear collision response
+//Capsule - Capsule collision response, rotation included
 function coll_res_cc(c1, c2){
     let normal = closestPointsBetweenLS(c1, c2)[0].subtr(closestPointsBetweenLS(c1, c2)[1]).unit();
-    let relVel = c1.vel.subtr(c2.vel);
+    
+    //1. Closing velocity
+    let collArm1 = closestPointsBetweenLS(c1, c2)[0].subtr(c1.pos).add(normal.mult(c1.r));
+    let rotVel1 = new Vector(-c1.angVel * collArm1.y, c1.angVel * collArm1.x);
+    let closVel1 = c1.vel.add(rotVel1);
+    let collArm2 = closestPointsBetweenLS(c1, c2)[1].subtr(c2.pos).add(normal.mult(-c2.r));
+    let rotVel2= new Vector(-c2.angVel * collArm2.y, c2.angVel * collArm2.x);
+    let closVel2 = c2.vel.add(rotVel2);
+
+    //2. Impulse augmentation
+    let impAug1 = Vector.cross(collArm1, normal);
+    impAug1 = impAug1 * c1.inv_inertia * impAug1;
+    let impAug2 = Vector.cross(collArm2, normal);
+    impAug2 = impAug2 * c2.inv_inertia * impAug2;
+
+    let relVel = closVel1.subtr(closVel2);
     let sepVel = Vector.dot(relVel, normal);
     let new_sepVel = -sepVel * Math.min(c1.elasticity, c2.elasticity);
-    
     let vsep_diff = new_sepVel - sepVel;
-    let impulse = vsep_diff / (c1.inv_m + c2.inv_m);
+    
+    let impulse = vsep_diff / (c1.inv_m + c2.inv_m + impAug1 + impAug2);
     let impulseVec = normal.mult(impulse);
 
+    //3. Changing the velocities
     c1.vel = c1.vel.add(impulseVec.mult(c1.inv_m));
     c2.vel = c2.vel.add(impulseVec.mult(-c2.inv_m));
+
+    c1.angVel += c1.inv_inertia * Vector.cross(collArm1, impulseVec);
+    c2.angVel -= c2.inv_inertia * Vector.cross(collArm2, impulseVec); 
 }
 
 function momentum_display(){
