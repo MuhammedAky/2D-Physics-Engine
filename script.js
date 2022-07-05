@@ -146,12 +146,18 @@ class Ball{
     }
 }
 
-//capsule class
 class Capsule{
-    constructor(x1, y1, x2, y2, r){
+    constructor(x1, y1, x2, y2, r, m){
         this.start = new Vector(x1, y1);
         this.end = new Vector(x2,y2);
         this.r = r;
+        this.m = m;
+        if (this.m === 0){
+            this.inv_m = 0;
+        } else {
+            this.inv_m = 1 / this.m;
+        }
+        this.elasticity = 1;
         this.length = this.end.subtr(this.start).mag();
         this.refDir = this.end.subtr(this.start).unit();
         this.dir = this.end.subtr(this.start).unit();
@@ -162,10 +168,10 @@ class Capsule{
         this.angVel = 0;
         this.angle = 0;
         this.refAngle = Math.acos(Vector.dot(this.end.subtr(this.start).unit(), new Vector(1,0)));
-        //if reaching 2.vec from 1.vec is faster CW, then -, if CCW, then +
         if (Vector.cross(this.end.subtr(this.start).unit(), new Vector(1,0)) > 0){
             this.refAngle *= -1;
         }
+        this.player = false;
         CAPS.push(this);
     }
 
@@ -174,10 +180,12 @@ class Capsule{
         ctx.arc(this.start.x, this.start.y, this.r, this.refAngle+this.angle+Math.PI/2, this.refAngle+this.angle+3*Math.PI/2);
         ctx.arc(this.end.x, this.end.y, this.r, this.refAngle+this.angle-Math.PI/2, this.refAngle+this.angle+Math.PI/2);
         ctx.closePath();
+        ctx.moveTo(this.start.x, this.start.y);
+        ctx.lineTo(this.end.x, this.end.y);
         ctx.strokeStyle = "black";
         ctx.stroke();
-        ctx.fillStyle = "lightgreen";
-        ctx.fill(); 
+        //ctx.fillStyle = "lightgreen";
+        //ctx.fill(); 
     }
 
     keyControl(){
@@ -216,6 +224,7 @@ class Wall{
     constructor(x1, y1, x2, y2){
         this.start = new Vector(x1, y1);
         this.end = new Vector(x2, y2);
+        this.dir = this.end.subtr(this.start).unit();
         this.center = this.start.add(this.end).mult(0.5);
         this.length = this.end.subtr(this.start).mag();
         this.refStart = new Vector(x1, y1);
@@ -251,10 +260,6 @@ class Wall{
     reposition(){
         this.angle += this.angVel;
         this.angVel *= 0.99;
-    }
-
-    wallUnit(){
-        return this.end.subtr(this.start).unit();
     }
 }
 
@@ -308,20 +313,52 @@ function rotMx(angle){
     return mx;
 }
 
-function closestPointBW(b1, w1){
-    let ballToWallStart = w1.start.subtr(b1.pos);
-    if(Vector.dot(w1.wallUnit(), ballToWallStart) > 0){
+function closestPointOnLS(p, w1){
+    let ballToWallStart = w1.start.subtr(p);
+    if(Vector.dot(w1.dir, ballToWallStart) > 0){
         return w1.start;
     }
 
-    let wallEndToBall = b1.pos.subtr(w1.end);
-    if(Vector.dot(w1.wallUnit(), wallEndToBall) > 0){
+    let wallEndToBall = p.subtr(w1.end);
+    if(Vector.dot(w1.dir, wallEndToBall) > 0){
         return w1.end;
     }
 
-    let closestDist = Vector.dot(w1.wallUnit(), ballToWallStart);
-    let closestVect = w1.wallUnit().mult(closestDist);
+    let closestDist = Vector.dot(w1.dir, ballToWallStart);
+    let closestVect = w1.dir.mult(closestDist);
     return w1.start.subtr(closestVect);
+}
+
+function closestPointsBetweenLS(c1, c2){
+    let shortestDist = closestPointOnLS(c1.start, c2).subtr(c1.start).mag();
+    let closestPoints = [c1.start, closestPointOnLS(c1.start, c2)];
+    if(closestPointOnLS(c1.end, c2).subtr(c1.end).mag() < shortestDist){
+        shortestDist = closestPointOnLS(c1.end, c2).subtr(c1.end).mag();
+        closestPoints = [c1.end, closestPointOnLS(c1.end, c2)];
+    }
+    if(closestPointOnLS(c2.start, c1).subtr(c2.start).mag() < shortestDist){
+        shortestDist = closestPointOnLS(c2.start, c1).subtr(c2.start).mag();
+        closestPoints = [closestPointOnLS(c2.start, c1), c2.start];
+    }
+    if(closestPointOnLS(c2.end, c1).subtr(c2.end).mag() < shortestDist){
+        shortestDist = closestPointOnLS(c2.end, c1).subtr(c2.end).mag();
+        closestPoints = [closestPointOnLS(c2.end, c1), c2.end];
+    }
+    ctx.strokeStyle = "red";
+    ctx.beginPath();
+    ctx.moveTo(closestPoints[0].x, closestPoints[0].y);
+    ctx.lineTo(closestPoints[1].x, closestPoints[1].y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(closestPoints[0].x, closestPoints[0].y, c1.r, 0, 2*Math.PI);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(closestPoints[1].x, closestPoints[1].y, c2.r, 0, 2*Math.PI);
+    ctx.closePath();
+    ctx.stroke();
+    return closestPoints;
 }
 
 function coll_det_bb(b1, b2){
@@ -333,9 +370,18 @@ function coll_det_bb(b1, b2){
 }
 
 function coll_det_bw(b1, w1){
-    let ballToClosest = closestPointBW(b1, w1).subtr(b1.pos);
+    let ballToClosest = closestPointOnLS(b1.pos, w1).subtr(b1.pos);
     if (ballToClosest.mag() <= b1.r){
         return true;
+    }
+}
+
+//Capsule - Capsule collision detection
+function coll_det_cc(c1, c2){
+    if(c1.r + c2.r >= closestPointsBetweenLS(c1, c2)[0].subtr(closestPointsBetweenLS(c1, c2)[1]).mag()){
+        return true;
+    } else {
+        return false;
     }
 }
 
@@ -348,8 +394,17 @@ function pen_res_bb(b1, b2){
 }
 
 function pen_res_bw(b1, w1){
-    let penVect = b1.pos.subtr(closestPointBW(b1, w1));
+    let penVect = b1.pos.subtr(closestPointOnLS(b1.pos, w1));
     b1.pos = b1.pos.add(penVect.unit().mult(b1.r-penVect.mag()));
+}
+
+//Capsule - Capsule penetration resolution
+function pen_res_cc(c1, c2){
+    let dist = closestPointsBetweenLS(c1, c2)[0].subtr(closestPointsBetweenLS(c1, c2)[1]);
+    let pen_depth = c1.r + c2.r - dist.mag();
+    let pen_res = dist.unit().mult(pen_depth / (c1.inv_m + c2.inv_m));
+    c1.pos = c1.pos.add(pen_res.mult(c1.inv_m));
+    c2.pos = c2.pos.add(pen_res.mult(-c2.inv_m));
 }
 
 function coll_res_bb(b1, b2){
@@ -367,11 +422,26 @@ function coll_res_bb(b1, b2){
 }
 
 function coll_res_bw(b1, w1){
-    let normal = b1.pos.subtr(closestPointBW(b1, w1)).unit();
+    let normal = b1.pos.subtr(closestPointOnLS(b1.pos, w1)).unit();
     let sepVel = Vector.dot(b1.vel, normal);
     let new_sepVel = -sepVel * b1.elasticity;
     let vsep_diff = sepVel - new_sepVel;
     b1.vel = b1.vel.add(normal.mult(-vsep_diff));
+}
+
+//Capsule - Capsule linear collision response
+function coll_res_cc(c1, c2){
+    let normal = closestPointsBetweenLS(c1, c2)[0].subtr(closestPointsBetweenLS(c1, c2)[1]).unit();
+    let relVel = c1.vel.subtr(c2.vel);
+    let sepVel = Vector.dot(relVel, normal);
+    let new_sepVel = -sepVel * Math.min(c1.elasticity, c2.elasticity);
+    
+    let vsep_diff = new_sepVel - sepVel;
+    let impulse = vsep_diff / (c1.inv_m + c2.inv_m);
+    let impulseVec = normal.mult(impulse);
+
+    c1.vel = c1.vel.add(impulseVec.mult(c1.inv_m));
+    c2.vel = c2.vel.add(impulseVec.mult(-c2.inv_m));
 }
 
 function momentum_display(){
@@ -409,16 +479,28 @@ function mainLoop(timestamp) {
         w.reposition();
     })
 
-    CAPS.forEach((c) => {
+    CAPS.forEach((c, index) => {
         c.draw();
-        c.keyControl();
+        if(c.player === true){
+            c.keyControl();
+        }
+        for(let i = index+1; i<CAPS.length; i++){
+            if(coll_det_cc(CAPS[index], CAPS[i])){
+                ctx.fillText("Collide", 500, 400);
+                pen_res_cc(CAPS[index], CAPS[i]);
+                coll_res_cc(CAPS[index], CAPS[i]);
+            }
+        }
         c.reposition();
     })
 
+    closestPointsBetweenLS(Caps1, Caps2);
     requestAnimationFrame(mainLoop);
 }
 
-let Caps1 = new Capsule(100, 300, 100, 100, 30);
+let Caps1 = new Capsule(300, 200, 400, 300, 40, 2);
+let Caps2 = new Capsule(150, 50, 150, 300, 30, 3);
+Caps1.player = true;
 
 
 
